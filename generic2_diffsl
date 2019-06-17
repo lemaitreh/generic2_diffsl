@@ -1,11 +1,9 @@
 #! /bin/bash
 
-dtiset=${1} 
-
 # help
-if [ $# -lt $(($(dtiset+4)) ] ; then
+if [ $# -lt $((${1}+4)) ] ; then
     echo "" ;	
-    echo "Usage: generic2_diffsl <dtiset> <pdir> <mag> <phase> <dti1> <dti2> <dti3> ... " ;
+    echo "Usage: generic2_diffsl <#dtisets> <pdir> <mag> <phase> <dti1> <dti2> <dti3> ... " ;
     echo "" ;
     echo "v.1 20/05/2019 H. Lemaitre (herve.lemaitre@u-psud.fr)" ;
     echo "" ;
@@ -14,7 +12,13 @@ if [ $# -lt $(($(dtiset+4)) ] ; then
     echo "2. B0 mapping correction if possible" ;
     echo "3. Brain extraction" ;
     echo "4. Tensor computation with weighted least squares" ;
-    echo "pdir has to be the full path." ;
+    echo "" ;
+    echo "dtisets: # of dti files" ;
+    echo "pdir: output directory (has to be the full path)" ;
+    echo "mag: magnitude image" ;
+    echo "phase: phase image" ;
+    echo "dti#: dti images to be concatenated" ;
+    echo "" ;
     echo "Examples:" ;
     echo "generic2_diffsl 4 /disk/ mag phase dti1 dti2 dti3 dti4" ;
     echo "generic2_diffsl 4 /disk/ NA NA dti1 dti2 dti3 dti4" ;
@@ -24,149 +28,89 @@ if [ $# -lt $(($(dtiset+4)) ] ; then
     exit 1 ; 
 fi
 
+# general variables
+pdir=${2} ;							# output directory
+doB0=1 ;							# do B0 mapping (1 = yes)
+subject=`basename ${5}` ;					# subject ID based on first dti file
+imgdti=${@:5} ;							# dti img files
+
+# eddy current correction variables
+ref=0 ;								# reference volume
+
+# B0 mapping variables
+#unwarp_dir_force=y ;						# uncomment to force unwarping direction
+epi_te=`echo "scale=6;93/1000.0" | bc` ;			# te = 93 ms 
+siglossthresh=`echo "scale=3;1.0 - (10 / 100.0)" | bc` ;	# signal loss set to 10%
+dte=2.46 ;							# delta echo time = 2.46 ms (te1=7.38, te2=4.92)
+dwell=`echo "scale=6;0.375/1000.0/1" | bc` ; 			# dwell time = 0.375 ms (SENSE factor ?)
+
+
 echo "############## Initialization				##############"
-pdir=${2}
-doB0=1 ;
 echo "FSL `cat ${FSLDIR}/etc/fslversion`" ;
 echo "host: `hostname`" ;
 echo "Processing:" ;
-echo "$1" ;
-echo "$2" ;
-echo "$3" ;
-echo "$4" ;
-for ((i=5; i<$((5+${dtiset})); i++)); do
+for ((i=1; i<$((5+${1})); i++)); do
 	echo "${!i}" ;
 done ;
-echo "Creating directory and copying data in:" ;
-echo ${pdir} ;
-mag=`${FSLDIR}/bin/remove_ext ${1}` ;
-phase=`${FSLDIR}/bin/remove_ext ${2}` ;
-for ((i=5; i<$((5+${dtiset})); i++)); do
-	dtiname="dti$i"
-	# WORK FROM HERE	
 
-	dti1=`${FSLDIR}/bin/remove_ext ${3}` ;
-	dti2=`${FSLDIR}/bin/remove_ext ${4}` ;
-	dti3=`${FSLDIR}/bin/remove_ext ${5}` ;
-	dti4=`${FSLDIR}/bin/remove_ext ${6}` ;
-	subject=`basename ${dti1}` ;
-	if [ -d "${pdir}/${subject}" ]; then
+echo "Creating directory in:" ;
+echo ${pdir} ;
+if [ -d "${pdir}/${subject}" ]; then
 		rm -rf ${pdir}/${subject} 
 		mkdir -p ${pdir}/${subject}
 		else mkdir -p ${pdir}/${subject} 
-	fi
-	echo "Start process for subject ${subject}:"
-	if [ `imtest ${dti1}` -eq 1 ]; then
-		echo "...dti1 file does exist"
-		${FSLDIR}/bin/imcp ${dti1} ${pdir}/${subject}/${subject}_dti1
-		else echo "...dti1 file does NOT exist!"
-		exit
-	fi
-	if [ -f ${dti1}.bval ]; then
-		echo "...bval1 file does exist"
-		cp ${dti1}.bval ${pdir}/${subject}/${subject}_dti1.bval
-		else echo "...bval1 file does NOT exist!"
-		exit
-	fi
-	if [ -f ${dti1}.bvec ]; then
-		echo "...bvec1 file does exist"
-		cp ${dti1}.bvec ${pdir}/${subject}/${subject}_dti1.bvec
-		else echo "...bvec1 file does NOT exist!"
-		exit
-	fi
-	if [ `imtest ${dti2}` -eq 1 ]; then
-		echo "...dti2 file does exist"
-		${FSLDIR}/bin/imcp ${dti2} ${pdir}/${subject}/${subject}_dti2
-		else echo "...dti2 file does NOT exist!"
-		exit
-	fi
-	if [ -f ${dti2}.bval ]; then
-		echo "...bval2 file does exist"
-		cp ${dti2}.bval ${pdir}/${subject}/${subject}_dti2.bval
-		else echo "...bval2 file does NOT exist!"
-		exit
-	fi
-	if [ -f ${dti2}.bvec ]; then
-		echo "...bvec2 file does exist"
-		cp ${dti2}.bvec ${pdir}/${subject}/${subject}_dti2.bvec
-		else echo "...bvec2 file does NOT exist!"
-		exit
-	fi
-	if [ `imtest ${dti3}` -eq 1 ]; then
-		echo "...dti3 file does exist"
-		${FSLDIR}/bin/imcp ${dti3} ${pdir}/${subject}/${subject}_dti3
-		else echo "...dti3 file does NOT exist!"
-		exit
-	fi
-	if [ -f ${dti3}.bval ]; then
-		echo "...bval3 file does exist"
-		cp ${dti3}.bval ${pdir}/${subject}/${subject}_dti3.bval
-		else echo "...bval3 file does NOT exist!"
-		exit
-	fi
-	if [ -f ${dti3}.bvec ]; then
-		echo "...bvec3 file does exist"
-		cp ${dti3}.bvec ${pdir}/${subject}/${subject}_dti3.bvec
-		else echo "...bvec3 file does NOT exist!"
-		exit
-	fi
-	if [ `imtest ${dti4}` -eq 1 ]; then
-		echo "...dti4 file does exist"
-		${FSLDIR}/bin/imcp ${dti4} ${pdir}/${subject}/${subject}_dti4
-		else echo "...dti4 file does NOT exist!"
-		exit
-	fi
-	if [ -f ${dti4}.bval ]; then
-		echo "...bval4 file does exist"
-		cp ${dti4}.bval ${pdir}/${subject}/${subject}_dti4.bval
-		else echo "...bval4 file does NOT exist!"
-		exit
-	fi
-	if [ -f ${dti4}.bvec ]; then
-		echo "...bvec4 file does exist"
-		cp ${dti4}.bvec ${pdir}/${subject}/${subject}_dti4.bvec
-		else echo "...bvec4 file does NOT exist!"
-		exit
-	fi
-	if [ `imtest ${phase}` -eq 1 ]; then
+fi
+echo "Checking for B0 map:" ;
+mag=`${FSLDIR}/bin/remove_ext ${3}` ;				
+phase=`${FSLDIR}/bin/remove_ext ${4}` ;
+if [ `imtest ${mag}` -eq 1 ]; then
+		echo "...magnitude file does exist"
+		${FSLDIR}/bin/imcp ${mag} ${pdir}/${subject}/${subject}_mag
+		else echo "...magnitude file does NOT exist!"
+		doB0=2
+fi
+if [ `imtest ${phase}` -eq 1 ]; then
 		echo "...phase file does exist"
 		${FSLDIR}/bin/imcp ${phase} ${pdir}/${subject}/${subject}_phase
 		else echo "...phase file does NOT exist!"
 		doB0=2
+fi
+echo "Checking for DTI img:" ;
+for i in ${imgdti} ; do
+	dti=`${FSLDIR}/bin/remove_ext ${i}` ;
+	if [ `imtest ${dti}` -eq 1 ]; then
+		echo "...`basename ${dti}` dti file does exist"
+		else echo "...`basename ${dti}` dti file does NOT exist!"
+		exit
 	fi
-	if [ `imtest ${mag}` -eq 1 ]; then
-		echo "...magnitude file does exist"
-		${FSLDIR}/bin/imcp ${mag} ${pdir}/${subject}/${subject}_mag
-		else echo "...magnitude file does NOT exist!"
-        doB0=2
+	if [ -f ${dti}.bval ]; then
+		echo "...`basename ${dti}` bval file does exist"
+		else echo "...`basename ${dti}` bval file does NOT exist!"
+		exit
 	fi
+	if [ -f ${dti}.bvec ]; then
+		echo "...`basename ${dti}` bvec file does exist"
+		else echo "...`basename ${dti}` bvec file does NOT exist!"
+		exit
+	fi
+fslmerge -t ${pdir}/${subject}/${subject}_dti ${imgdti}
 
-    fslmerge -t ${pdir}/${subject}/${subject}_dti ${pdir}/${subject}/${subject}_dti1 ${pdir}/${subject}/${subject}_dti2 ${pdir}/${subject}/${subject}_dti3 ${pdir}/${subject}/${subject}_dti4
-	bval1=`head -1 ${pdir}/${subject}/${subject}_dti1.bval`
-	bval2=`head -1 ${pdir}/${subject}/${subject}_dti2.bval`
-	bval3=`head -1 ${pdir}/${subject}/${subject}_dti3.bval`
-	bval4=`head -1 ${pdir}/${subject}/${subject}_dti4.bval`
-	bvec11=`head -1 ${pdir}/${subject}/${subject}_dti1.bvec`
-	bvec12=`head -2 ${pdir}/${subject}/${subject}_dti1.bvec | tail -1`
-	bvec13=`head -3 ${pdir}/${subject}/${subject}_dti1.bvec | tail -1`
-	bvec21=`head -1 ${pdir}/${subject}/${subject}_dti2.bvec`
-	bvec22=`head -2 ${pdir}/${subject}/${subject}_dti2.bvec | tail -1`
-	bvec23=`head -3 ${pdir}/${subject}/${subject}_dti2.bvec | tail -1`
-	bvec31=`head -1 ${pdir}/${subject}/${subject}_dti3.bvec`
-	bvec32=`head -2 ${pdir}/${subject}/${subject}_dti3.bvec | tail -1`
-	bvec33=`head -3 ${pdir}/${subject}/${subject}_dti3.bvec | tail -1`
-	bvec41=`head -1 ${pdir}/${subject}/${subject}_dti4.bvec`
-	bvec42=`head -2 ${pdir}/${subject}/${subject}_dti4.bvec | tail -1`
-	bvec43=`head -3 ${pdir}/${subject}/${subject}_dti4.bvec | tail -1`
-	echo "${bval1} ${bval2} ${bval3} ${bval4}" > ${pdir}/${subject}/${subject}_dti.bval
-	echo "${bvec11} ${bvec21} ${bvec31} ${bvec41}" > ${pdir}/${subject}/${subject}_dti.bvec
-	echo "${bvec12} ${bvec22} ${bvec32} ${bvec42}" >> ${pdir}/${subject}/${subject}_dti.bvec
-	echo "${bvec13} ${bvec23} ${bvec33} ${bvec43}" >> ${pdir}/${subject}/${subject}_dti.bvec
+for i in ${imgdti} ; do
+	dti=`${FSLDIR}/bin/remove_ext ${i}` ;
+	bval=`head -1 ${dti}.bval`
+	echo ${bval} >> ${pdir}/${subject}/${subject}_dti.bval
+	bvec1=`head -1 ${dti}.bvec`
+	bvec2=`head -2 ${dti}.bvec | tail -1`
+	bvec3=`head -3 ${dti}.bvec | tail -1`
+	touch ${pdir}/${subject}/${subject}_dti.bvec
+	sed -i '1s/$/ '${bvec1}'/' ${pdir}/${subject}/${subject}_dti.bvec
+	sed -i '2s/$/ '${bvec2}'/' ${pdir}/${subject}/${subject}_dti.bvec
+	sed -i '3s/$/ '${bvec3}'/' ${pdir}/${subject}/${subject}_dti.bvec
+echo "Done" ;  
 
 echo "############## Eddy current correction ##############"
 cd ${pdir}/${subject}
 # Mainly from eddy_correct script
-ref=0 ;									# reference volume
 input=${subject}_dti ;
 output=${subject}_dti_ecc ;
 ii=1 ;
@@ -288,16 +232,12 @@ if [ ${doB0} -eq 2 ]; then
 	echo "############## Process for subject ${subject} done	##############"
 	exit
 fi
+
 echo "############## B0 mapping correction			##############"
 # FM = space of fieldmap images
 # EF = space of EPI image
 # UD = undistorted (in any space)
 # D  = distorted (in any space)
-epi_te=`echo "scale=6;93/1000.0" | bc` ; 				    # te = 93 ms for IMABIO
-unwarp_dir=y								                # unwarping direction = y
-siglossthresh=`echo "scale=3;1.0 - (10 / 100.0)" | bc` ; 	# signal loss set to 10%
-dte=2.46 ; 							                        # delta echo time = 2.46 ms (te1=7.38, te2=4.92)
-dwell=`echo "scale=6;0.375/1000.0/1" | bc` ; 			    # dwell time = 0.375 ms (SENSE factor ?)
 
 echo "Compute B0 mapping"
 # Header slope=2 and intercep=-4096
@@ -310,7 +250,7 @@ ${FSLDIR}/bin/fslmaths ${subject}_phase_uw -mul 1000 -div $dte ${subject}_phase_
 # Copy input files into unwarp subdir
 echo "Compute unwarping"
 mkdir -p ${subject}_dti_ecc.unwarp
-${FSLDIR}/bin/fslroi ${subject}_dti_ecc ${subject}_dti_ecc.unwarp/EF_D_example_func $ref 1
+${FSLDIR}/bin/fslroi ${subject}_dti_ecc ${subject}_dti_ecc.unwarp/EF_D_example_func ${ref} 1
 ${FSLDIR}/bin/fslmaths ${subject}_phase_rads ${subject}_dti_ecc.unwarp/FM_UD_fmap
 ${FSLDIR}/bin/fslmaths ${subject}_mag ${subject}_dti_ecc.unwarp/FM_UD_fmap_mag
 cd ${subject}_dti_ecc.unwarp
@@ -372,7 +312,7 @@ ${FSLDIR}/bin/fslmaths FM_D_fmap_sigloss -thr $siglossthresh FM_D_fmap_sigloss -
 ${FSLDIR}/bin/flirt -in EF_D_example_func -ref FM_D_fmap_mag_brain_siglossed -omat EF_2_FM.mat -dof 6 -refweight FM_D_fmap_sigloss -searchrx -45 45 -searchry -45 45 -searchrz -45 45 -out FM_D_example_func
 ${FSLDIR}/bin/convert_xfm -omat FM_2_EF.mat -inverse EF_2_FM.mat
 
-# Checking correction
+# Checking B0 correction
 costa=`${FSLDIR}/bin/flirt -in EF_D_example_func -ref FM_UD_fmap_mag_brain_siglossed -schedule measurecost1.sch -init EF_2_FM.mat -refweight FM_D_fmap_sigloss | head -1 | cut -d " " -f1`
 costx=`${FSLDIR}/bin/flirt -in EF_D_example_func -ref FM_D_fmap_mag_brain_siglossed_x -schedule measurecost1.sch -init EF_2_FM.mat -refweight FM_D_fmap_sigloss | head -1 | cut -d " " -f1`
 costy=`${FSLDIR}/bin/flirt -in EF_D_example_func -ref FM_D_fmap_mag_brain_siglossed_y -schedule measurecost1.sch -init EF_2_FM.mat -refweight FM_D_fmap_sigloss | head -1 | cut -d " " -f1`
@@ -384,15 +324,20 @@ icosty=`echo ${costy}*10000| bc -l | sed 's/[.].*//'`
 icostnegx=`echo ${costnegx}*10000| bc -l | sed 's/[.].*//'`
 icostnegy=`echo ${costnegy}*10000| bc -l | sed 's/[.].*//'`
 warn=""
+unwarp_dir=y
 if [ ${icostx} -lt ${icosta} ] && [ ${icostx} -lt ${icosty} ] && [ ${icostx} -lt ${icostnegy} ] && [ ${icostx} -lt ${icostnegx} ]; then
 	unwarp_dir=x
 elif [ ${icostnegx} -lt ${icosta} ] && [ ${icostnegx} -lt ${icosty} ] && [ ${icostnegx} -lt ${icostnegy} ] && [ ${icostnegx} -lt ${icostx} ]; then
 	unwarp_dir=x-
 elif [ ${icostnegy} -lt ${icosta} ] && [ ${icostnegy} -lt ${icosty} ] && [ ${icostnegy} -lt ${icostx} ] && [ ${icostnegy} -lt ${icostnegx} ]; then
 	unwarp_dir=y-
-elif [ ${icosty} -gt ${icosta} ]; then
-	warn="Warning !!! The distortion correction did not improve the coregistration."
+else 
+	warn="Warning !!! No distortion correction improve the coregistration."
 fi
+if [ ! -z ${unwarp_dir_force} ]; then
+	unwarp_dir=${unwarp_dir_force}
+fi
+
 echo "# B0 mapping correction log" > ../${subject}_dti_ecc_dc.log
 echo "${costa} cost value for uncorrected image"	>> ../${subject}_dti_ecc_dc.log
 echo "${costx} cost value for correction in x"		>> ../${subject}_dti_ecc_dc.log
@@ -421,7 +366,7 @@ ${FSLDIR}/bin/convertwarp -s EF_UD_shift -o EF_UD_warp -r EF_D_example_func --sh
 echo "Apply unwarping"
 cd ${pdir}/${subject}
 ${FSLDIR}/bin/applywarp -i ${subject}_dti_ecc -r ${subject}_dti_ecc.unwarp/EF_UD_example_func -o ${subject}_dti_ecc_dc -w ${subject}_dti_ecc.unwarp/EF_UD_warp --interp=spline --abs
-
+echo "Done"
 
 echo "############## Brain extraction after B0 correction	##############"
 ${FSLDIR}/bin/fslmaths ${subject}_dti_ecc_dc -Tmean mean_tmp
