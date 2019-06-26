@@ -3,7 +3,7 @@
 # help
 if [ $# -lt $((${1}+4)) ] ; then
     echo "" ;	
-    echo "Usage: generic2_diffsl <#dtisets> <pdir> <mag> <phase> <dti1> <dti2> <dti3> ... " ;
+    echo "Usage: generic2_diffsl <dtisets> <pdir> <mag> <phase> <dti1> <dti2> <dti3> ... " ;
     echo "" ;
     echo "v.1 20/05/2019 H. Lemaitre (herve.lemaitre@u-psud.fr)" ;
     echo "" ;
@@ -31,7 +31,8 @@ fi
 # general variables
 pdir=${2} ;							# output directory
 doB0=1 ;							# do B0 mapping (1 = yes)
-subject=`basename ${5}` ;					# subject ID based on first dti file
+firstdti=`${FSLDIR}/bin/remove_ext ${5}` ;			# first dti file
+subject=`basename ${firstdti}` ;				# subject ID 
 imgdti=${@:5} ;							# dti img files
 
 # eddy current correction variables
@@ -75,7 +76,7 @@ if [ `imtest ${phase}` -eq 1 ]; then
 		else echo "...phase file does NOT exist!"
 		doB0=2
 fi
-echo "Checking for DTI img:" ;
+echo "Checking for DTI files:" ;
 for i in ${imgdti} ; do
 	dti=`${FSLDIR}/bin/remove_ext ${i}` ;
 	if [ `imtest ${dti}` -eq 1 ]; then
@@ -93,19 +94,22 @@ for i in ${imgdti} ; do
 		else echo "...`basename ${dti}` bvec file does NOT exist!"
 		exit
 	fi
+done ;
+echo "Merging DTI files" ; 
 fslmerge -t ${pdir}/${subject}/${subject}_dti ${imgdti}
 
 for i in ${imgdti} ; do
 	dti=`${FSLDIR}/bin/remove_ext ${i}` ;
-	bval=`head -1 ${dti}.bval`
-	echo ${bval} >> ${pdir}/${subject}/${subject}_dti.bval
-	bvec1=`head -1 ${dti}.bvec`
-	bvec2=`head -2 ${dti}.bvec | tail -1`
-	bvec3=`head -3 ${dti}.bvec | tail -1`
-	touch ${pdir}/${subject}/${subject}_dti.bvec
-	sed -i '1s/$/ '${bvec1}'/' ${pdir}/${subject}/${subject}_dti.bvec
-	sed -i '2s/$/ '${bvec2}'/' ${pdir}/${subject}/${subject}_dti.bvec
-	sed -i '3s/$/ '${bvec3}'/' ${pdir}/${subject}/${subject}_dti.bvec
+	bval+=`head -1 ${dti}.bval`" "
+	bvec1+=`head -1 ${dti}.bvec`" "
+	bvec2+=`head -2 ${dti}.bvec | tail -1`" "
+	bvec3+=`head -3 ${dti}.bvec | tail -1`" "	
+done ;
+echo ${bval} > ${pdir}/${subject}/${subject}_dti.bval
+echo "${bvec1}" > ${pdir}/${subject}/${subject}_dti.bvec
+echo "${bvec2}" >> ${pdir}/${subject}/${subject}_dti.bvec
+echo "${bvec3}" >> ${pdir}/${subject}/${subject}_dti.bvec
+
 echo "Done" ;  
 
 echo "############## Eddy current correction ##############"
@@ -301,8 +305,8 @@ ${FSLDIR}/bin/sigloss -i FM_UD_fmap --te=$epi_te -m FM_UD_fmap_mag_brain_mask -s
 ${FSLDIR}/bin/fslmaths FM_UD_fmap_sigloss -mul FM_UD_fmap_mag_brain FM_UD_fmap_mag_brain_siglossed -odt float
 
 # Make a warped version of FM_UD_fmap_mag to match with the EPI
-${FSLDIR}/bin/fugue -i FM_UD_fmap_mag_brain_siglossed --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwell -w FM_D_fmap_mag_brain_siglossed --nokspace --unwarpdir=$unwarp_dir
-${FSLDIR}/bin/fugue -i FM_UD_fmap_sigloss             --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwell -w FM_D_fmap_sigloss             --nokspace --unwarpdir=$unwarp_dir
+${FSLDIR}/bin/fugue -i FM_UD_fmap_mag_brain_siglossed --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwell -w FM_D_fmap_mag_brain_siglossed --nokspace --unwarpdir=y
+${FSLDIR}/bin/fugue -i FM_UD_fmap_sigloss             --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwell -w FM_D_fmap_sigloss             --nokspace --unwarpdir=y
 ${FSLDIR}/bin/fugue -i FM_UD_fmap_mag_brain_siglossed --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwell -w FM_D_fmap_mag_brain_siglossed_x --nokspace --unwarpdir=x
 ${FSLDIR}/bin/fugue -i FM_UD_fmap_mag_brain_siglossed --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwell -w FM_D_fmap_mag_brain_siglossed_y --nokspace --unwarpdir=y
 ${FSLDIR}/bin/fugue -i FM_UD_fmap_mag_brain_siglossed --loadfmap=FM_UD_fmap --mask=FM_UD_fmap_mag_brain_mask --dwell=$dwell -w FM_D_fmap_mag_brain_siglossed_negx --nokspace --unwarpdir=x-
